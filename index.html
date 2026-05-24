@@ -315,17 +315,17 @@
         const musicObjectUrl = URL.createObjectURL(musicBlob);
         const voiceObjectUrl = URL.createObjectURL(voiceBlob);
 
-        // Start music quietly
+        // Start music quietly, fade up over 2.5s
         musicAudio = new Audio(musicObjectUrl);
         musicAudio.loop = true;
         musicAudio.volume = 0;
         await musicAudio.play();
-        fadeVolume(musicAudio, 0, 0.14, 1200);
+        fadeVolume(musicAudio, 0, 0.20, 2500);
 
         setStatus('');
 
-        // Start voice after brief musical breath
-        await new Promise(r => setTimeout(r, 1800));
+        // Let the music establish itself before the voice enters
+        await new Promise(r => setTimeout(r, 4000));
         if (!isPlaying) return;
 
         voiceAudio = new Audio(voiceObjectUrl);
@@ -333,7 +333,8 @@
         voiceAudio.play();
 
         voiceAudio.onended = () => {
-          setTimeout(() => { if (isPlaying) stopAll(); }, 2500);
+          // Music lingers for 6 seconds after voice finishes
+          setTimeout(() => { if (isPlaying) stopAll(); }, 6000);
           URL.revokeObjectURL(voiceObjectUrl);
         };
 

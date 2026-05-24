@@ -1,5 +1,23 @@
 import { getAuthorMeta } from '../lib/authors.js';
 
+// Insert ElevenLabs <break> tags to slow the delivery and make it feel
+// like someone thinking aloud — pauses at commas, dashes, and sentence ends.
+function phrasify(raw) {
+  return raw
+    // em-dash or double-dash → longer breath
+    .replace(/\s*[—–]\s*/g, '<break time="0.7s" /> ')
+    // comma → small pause
+    .replace(/,\s*/g, ',<break time="0.35s" /> ')
+    // semicolon → medium pause
+    .replace(/;\s*/g, ';<break time="0.55s" /> ')
+    // mid-text ellipsis → contemplative pause
+    .replace(/\.\.\./g, '<break time="0.8s" />')
+    // sentence-ending period that is NOT the last character (i.e. mid-text)
+    .replace(/\.(\s+)(?=[A-Z])/g, '.<break time="0.6s" />$1')
+    // colon → brief pause before the reveal
+    .replace(/:\s*/g, ':<break time="0.45s" /> ');
+}
+
 // Fetch voices available on this account, pick best match for gender
 async function pickVoice(apiKey, gender) {
   const res = await fetch('https://api.elevenlabs.io/v1/voices', {
@@ -51,13 +69,14 @@ export default async function handler(req, res) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      text: decodeURIComponent(text),
+      text: phrasify(decodeURIComponent(text)),
       model_id: 'eleven_multilingual_v2',
       voice_settings: {
-        stability: 0.60,
-        similarity_boost: 0.80,
-        style: 0.15,
+        stability: 0.45,        // more variation = feels like it's discovering the words
+        similarity_boost: 0.75,
+        style: 0.40,            // expressive, unhurried
         use_speaker_boost: true,
+        speed: 0.82,            // deliberate, not slow — thoughtful
       },
     }),
   });
