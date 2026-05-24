@@ -3299,5 +3299,5 @@ export default function handler(req, res) {
   }
 
   const index = getDayOfYear() % quotes.length;
-  res.status(200).json(quotes[index]);
+  res.status(200).json({ ...quotes[index], index });
 }

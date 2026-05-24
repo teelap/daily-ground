@@ -25,9 +25,7 @@
       --shadow: rgba(44, 36, 22, 0.08);
     }
 
-    html, body {
-      height: 100%;
-    }
+    html, body { height: 100%; }
 
     body {
       background-color: var(--bg);
@@ -60,7 +58,7 @@
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 4px;
-      padding: 3.5rem 4rem;
+      padding: 3.5rem 4rem 2.5rem;
       max-width: 680px;
       width: 100%;
       box-shadow:
@@ -125,6 +123,60 @@
       opacity: 0.7;
     }
 
+    /* ── Audio button ── */
+    .audio-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .play-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: none;
+      border: 1px solid var(--accent-soft);
+      border-radius: 2px;
+      padding: 0.5rem 1rem;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.72rem;
+      font-weight: 400;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .play-btn:hover:not(:disabled) {
+      background: var(--accent-soft);
+      color: var(--bg-card);
+      border-color: var(--accent-soft);
+    }
+
+    .play-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .play-btn svg {
+      width: 12px;
+      height: 12px;
+      flex-shrink: 0;
+    }
+
+    .audio-status {
+      font-size: 0.7rem;
+      letter-spacing: 0.06em;
+      color: var(--ink-light);
+      opacity: 0.6;
+      font-style: italic;
+    }
+
+    /* ── Footer ── */
     .footer {
       margin-top: 2.5rem;
       font-size: 0.72rem;
@@ -152,14 +204,8 @@
     }
 
     @media (max-width: 600px) {
-      .card {
-        padding: 2.5rem 2rem;
-      }
-      .card::before {
-        font-size: 6rem;
-        top: 1rem;
-        left: 1.5rem;
-      }
+      .card { padding: 2.5rem 2rem 2rem; }
+      .card::before { font-size: 6rem; top: 1rem; left: 1.5rem; }
     }
   </style>
 </head>
@@ -174,6 +220,19 @@
       <span class="author" id="quote-author"></span>
       <span class="context" id="quote-context"></span>
     </div>
+    <div class="audio-row">
+      <button class="play-btn" id="play-btn" disabled>
+        <svg id="play-icon" viewBox="0 0 12 12" fill="currentColor">
+          <polygon points="2,1 11,6 2,11"/>
+        </svg>
+        <svg id="stop-icon" viewBox="0 0 12 12" fill="currentColor" style="display:none">
+          <rect x="2" y="1" width="3" height="10"/>
+          <rect x="7" y="1" width="3" height="10"/>
+        </svg>
+        <span id="play-label">Listen</span>
+      </button>
+      <span class="audio-status" id="audio-status"></span>
+    </div>
   </div>
 
   <div class="footer">
@@ -183,23 +242,110 @@
   </div>
 
   <script>
+    let quote = null;
+    let musicAudio = null;
+    let voiceAudio = null;
+    let isPlaying = false;
+
+    const playBtn    = document.getElementById('play-btn');
+    const playIcon   = document.getElementById('play-icon');
+    const stopIcon   = document.getElementById('stop-icon');
+    const playLabel  = document.getElementById('play-label');
+    const statusEl   = document.getElementById('audio-status');
+
     function formatDate(date) {
       return date.toLocaleDateString('en-US', {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric'
+        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
       });
     }
+
+    function setStatus(msg) { statusEl.textContent = msg; }
+
+    function fadeVolume(audio, from, to, ms) {
+      const steps = 30;
+      const interval = ms / steps;
+      const delta = (to - from) / steps;
+      let step = 0;
+      audio.volume = from;
+      const t = setInterval(() => {
+        step++;
+        audio.volume = Math.min(1, Math.max(0, from + delta * step));
+        if (step >= steps) clearInterval(t);
+      }, interval);
+    }
+
+    function stopAll() {
+      if (musicAudio) { fadeVolume(musicAudio, musicAudio.volume, 0, 800); setTimeout(() => { musicAudio.pause(); musicAudio.currentTime = 0; }, 850); }
+      if (voiceAudio) { voiceAudio.pause(); voiceAudio.currentTime = 0; }
+      isPlaying = false;
+      playIcon.style.display = '';
+      stopIcon.style.display = 'none';
+      playLabel.textContent = 'Listen';
+      setStatus('');
+    }
+
+    async function play() {
+      if (isPlaying) { stopAll(); return; }
+      if (!quote) return;
+
+      isPlaying = true;
+      playBtn.disabled = true;
+      playIcon.style.display = 'none';
+      stopIcon.style.display = '';
+      playLabel.textContent = 'Stop';
+      setStatus('Preparing…');
+
+      try {
+        const [musicRes, voiceRes] = await Promise.all([
+          fetch(`/api/music?author=${encodeURIComponent(quote.author)}`).then(r => r.json()),
+          fetch(`/api/audio?index=${quote.index}&text=${encodeURIComponent(quote.text)}&author=${encodeURIComponent(quote.author)}`).then(r => r.json()),
+        ]);
+
+        if (!musicRes.url || !voiceRes.url) throw new Error('Audio unavailable');
+
+        // Start music quietly
+        musicAudio = new Audio(musicRes.url);
+        musicAudio.loop = true;
+        musicAudio.volume = 0;
+        await musicAudio.play();
+        fadeVolume(musicAudio, 0, 0.14, 1200);
+
+        setStatus('');
+
+        // Start voice after brief musical breath
+        await new Promise(r => setTimeout(r, 1800));
+        if (!isPlaying) return;
+
+        voiceAudio = new Audio(voiceRes.url);
+        voiceAudio.volume = 1;
+        voiceAudio.play();
+
+        voiceAudio.onended = () => {
+          // Let music breathe a moment then fade out
+          setTimeout(() => { if (isPlaying) stopAll(); }, 2500);
+        };
+
+        voiceAudio.onerror = () => stopAll();
+      } catch (e) {
+        setStatus('Audio unavailable');
+        stopAll();
+      } finally {
+        playBtn.disabled = false;
+      }
+    }
+
+    playBtn.addEventListener('click', play);
 
     document.getElementById('footer-date').textContent = formatDate(new Date());
 
     fetch('/api/quote')
       .then(r => r.json())
-      .then(quote => {
-        document.getElementById('quote-text').textContent = quote.text;
-        document.getElementById('quote-author').textContent = quote.author;
-        document.getElementById('quote-context').textContent = quote.context;
+      .then(q => {
+        quote = q;
+        document.getElementById('quote-text').textContent = q.text;
+        document.getElementById('quote-author').textContent = q.author;
+        document.getElementById('quote-context').textContent = q.context;
+        playBtn.disabled = false;
       })
       .catch(() => {
         document.getElementById('quote-text').textContent = 'Be here now.';
