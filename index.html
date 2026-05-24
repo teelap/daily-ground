@@ -293,18 +293,30 @@
       playIcon.style.display = 'none';
       stopIcon.style.display = '';
       playLabel.textContent = 'Stop';
-      setStatus('Preparing…');
+      setStatus('Generating…');
 
       try {
-        const [musicRes, voiceRes] = await Promise.all([
-          fetch(`/api/music?author=${encodeURIComponent(quote.author)}`).then(r => r.json()),
-          fetch(`/api/audio?index=${quote.index}&text=${encodeURIComponent(quote.text)}&author=${encodeURIComponent(quote.author)}`).then(r => r.json()),
+        const musicUrl = `/api/music?author=${encodeURIComponent(quote.author)}`;
+        const voiceUrl = `/api/audio?index=${quote.index}&text=${encodeURIComponent(quote.text)}&author=${encodeURIComponent(quote.author)}`;
+
+        // Pre-fetch both in parallel so they're in browser cache
+        const [musicFetch, voiceFetch] = await Promise.all([
+          fetch(musicUrl),
+          fetch(voiceUrl),
         ]);
 
-        if (!musicRes.url || !voiceRes.url) throw new Error('Audio unavailable');
+        if (!musicFetch.ok || !voiceFetch.ok) throw new Error('Audio generation failed');
+
+        const [musicBlob, voiceBlob] = await Promise.all([
+          musicFetch.blob(),
+          voiceFetch.blob(),
+        ]);
+
+        const musicObjectUrl = URL.createObjectURL(musicBlob);
+        const voiceObjectUrl = URL.createObjectURL(voiceBlob);
 
         // Start music quietly
-        musicAudio = new Audio(musicRes.url);
+        musicAudio = new Audio(musicObjectUrl);
         musicAudio.loop = true;
         musicAudio.volume = 0;
         await musicAudio.play();
@@ -316,17 +328,19 @@
         await new Promise(r => setTimeout(r, 1800));
         if (!isPlaying) return;
 
-        voiceAudio = new Audio(voiceRes.url);
+        voiceAudio = new Audio(voiceObjectUrl);
         voiceAudio.volume = 1;
         voiceAudio.play();
 
         voiceAudio.onended = () => {
-          // Let music breathe a moment then fade out
           setTimeout(() => { if (isPlaying) stopAll(); }, 2500);
+          URL.revokeObjectURL(voiceObjectUrl);
         };
 
-        voiceAudio.onerror = () => stopAll();
+        voiceAudio.onerror = () => { stopAll(); URL.revokeObjectURL(voiceObjectUrl); };
+        musicAudio.onended = () => URL.revokeObjectURL(musicObjectUrl);
       } catch (e) {
+        console.error(e);
         setStatus('Audio unavailable');
         stopAll();
       } finally {
